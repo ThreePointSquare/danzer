@@ -1,0 +1,472 @@
+Option Explicit
+'Script written by ksteinfe
+'Script copyrighted by www dot ksteinfe dot net
+'Script version Thursday, July 05, 2007 6:22:35 PM
+
+Call Main()
+Sub Main()
+	Dim strAction
+	strAction = Rhino.GetString("SubD or Make?", "SubD", array("SubD", "Make"))
+	
+	Select Case UCase(Left(strAction, 1))
+		Case "S"
+			UserSubDivTile()
+		Case "M"
+			UserMakeTile()
+		Case Else
+			Print("bye bye")
+	End Select
+
+End Sub
+
+Function UserSubDivTile()
+	Dim arrObjects, strObject, strGroupName
+	ReDim arrStrGroupNames(0)
+	Dim tCount : tCount = 0
+	
+	arrObjects = Rhino.GetObjects("Pick Tiles To Subdivide", 0, True, False)
+	If IsArray(arrObjects) Then
+		Rhino.EnableRedraw(False)
+		For Each strObject In arrObjects
+			Dim isNew : isNew = True
+			For Each strGroupName In arrStrGroupNames
+				If strGroupName = Rhino.ObjectTopGroup(strObject) Then isNew = False
+			Next
+			If isNew Then 
+				''Rhino.Print "Found New Tile " & Rhino.ObjectTopGroup(strObject)
+				ReDim Preserve arrStrGroupNames(tCount)
+				arrStrGroupNames(tCount) = Rhino.ObjectTopGroup(strObject)
+				tCount = tCount + 1
+			End If
+		Next
+		For Each strGroupName In arrStrGroupNames
+			Call SubDivTile(strGroupName)
+		Next
+		Rhino.EnableRedraw(True)
+	End If
+	
+End Function
+
+Function UserMakeTile()
+	Dim strType, arrPt1, arrPt2, arrPt3, bool
+	bool = False
+	strType = Rhino.GetString("Tile Type?", , array("A", "ai", "B", "bi", "C", "ci", "K", "ki"))
+	arrPt1 = Rhino.GetPoint("Pick Origin point")
+	If IsArray(arrPt1) Then
+		arrPt2 = Rhino.GetPoint("Pick Direction point", arrPt1)
+		If IsArray(arrPt2) Then
+			Dim dblDistance : dblDistance = Rhino.Distance(arrPt1, arrPt2)
+			arrPt3 = Rhino.GetPoint("Pick Plane point", arrPt1, dblDistance)
+			If IsArray(arrPt3) Then
+				bool = True
+			End If
+		End If
+	End If
+	
+	If bool Then bool = DanzerTile(array(Mid(strType, 1, 1), array(arrPt1, arrPt2, arrPt3)))
+	
+	UserMakeTile = bool
+End Function
+
+Function SubDivTile(strTileGroup)
+	''Call Print("subdividing tile '" & strTileGroup & "' as type "& Mid(strTileGroup,1,1))
+	Dim divType, bool
+	bool = True
+
+	Dim ptArr, arrObjects, strObject, strMesh
+	strMesh = Null
+	arrObjects = Rhino.ObjectsByGroup(strTileGroup)
+	For Each strObject In arrObjects
+		If Rhino.IsMesh(strObject) Then 
+			strMesh = strObject
+		End If
+	Next
+	
+	If isNull(strMesh) Then Exit Function
+	If isArray(strMesh) Then Exit Function
+	
+	Dim arrTransformPlane, arrMeshPts, dblScale
+	arrMeshPts = Rhino.MeshVertices(strMesh)
+	arrTransformPlane = Rhino.PlaneFromPoints(arrMeshPts(0), arrMeshPts(1), arrMeshPts(2))
+	dblScale = Rhino.Distance(arrMeshPts(0), arrMeshPts(1))	
+	
+	Dim arrTileArgs
+	Select Case Mid(strTileGroup, 1, 1)
+		Case "A"
+			arrTileArgs = DanzerSubDivTilesA(False)
+		Case "a"
+			arrTileArgs = DanzerSubDivTilesA(True)
+		Case "B"
+			arrTileArgs = DanzerSubDivTilesB(False)
+		Case "b"
+			arrTileArgs = DanzerSubDivTilesB(True)
+		Case "C"
+			arrTileArgs = DanzerSubDivTilesC(False)
+			dblScale = dblScale * 1.618
+		Case "c"
+			arrTileArgs = DanzerSubDivTilesC(True)
+			dblScale = dblScale * 1.618
+		Case "K"
+			arrTileArgs = DanzerSubDivTilesK(False)
+		Case "k"
+			arrTileArgs = DanzerSubDivTilesK(True)						
+		Case Else
+			Print("found unknown tile type")
+			bool = False
+	End Select
+	
+	If bool Then
+		
+		Dim i
+		For i = 0 To UBound(arrTileArgs(0))
+			Dim strType, arrPts
+			strType = arrTileArgs(0)(i)
+			arrPts = arrTileArgs(1)(i)
+			
+			Dim j
+			For j = 0 To 3
+				arrPts(j) = Rhino.VectorScale(arrPts(j), dblScale)
+				arrPts(j) = Rhino.XformCPlaneToWorld(arrPts(j), arrTransformPlane)
+			Next
+			
+			Call DanzerTile(array(strType, arrPts))
+		Next
+		
+		Rhino.DeleteObject(strMesh)
+	End If
+	
+	SubDivTile = bool
+End Function
+
+Function DanzerTile(arrArgs)
+	Dim strType, arrPts, bool, tileColor
+	strType = arrArgs(0)
+	arrPts = arrArgs(1)
+	bool = False
+		
+	If IsArray(arrPts) Then
+		Dim arrPlane, dblScale
+		arrPlane = Rhino.PlaneFromPoints(arrPts(0), arrPts(1), arrPts(2))
+		dblScale = Rhino.Distance(arrPts(0), arrPts(1))
+		
+		''Print("DanzerTile() : making tile " & strType & " at scale: "& dblScale)
+		bool = True
+	End If
+	
+	
+	If bool Then
+		Dim ptArr, i	
+		Select Case strType
+			Case "A"
+				ptArr = DanzerPtsA(False)
+				tileColor = RGB(255, 0, 255)
+			Case "a"
+				ptArr = DanzerPtsA(True)
+				tileColor = RGB(128, 0, 128)
+			Case "B"
+				ptArr = DanzerPtsB(False)
+				tileColor = RGB(255, 191, 255)
+			Case "b"
+				ptArr = DanzerPtsB(True)
+				tileColor = RGB(128, 95, 128)
+			Case "C"
+				ptArr = DanzerPtsC(False)
+				dblScale = dblScale * 1.618
+				tileColor = RGB(255, 181, 197)
+			Case "c"
+				ptArr = DanzerPtsC(True)
+				dblScale = dblScale * 1.618
+				tileColor = RGB(128, 90, 98)
+			Case "K"
+				ptArr = DanzerPtsK(False)
+				tileColor = RGB(139, 28, 98)
+			Case "k"
+				ptArr = DanzerPtsK(True)
+				tileColor = RGB(70, 14, 49)						
+			Case Else
+				msgBox("unknown tile type")
+				bool = False
+		End Select
+
+	End If
+	
+		
+	If bool Then
+		For i = 0 To 3
+			ptArr(i) = Rhino.VectorScale(ptArr(i), dblScale)
+			ptArr(i) = Rhino.XformCPlaneToWorld(ptArr(i), arrPlane)
+		Next
+	
+		Dim strMesh, strPt
+		Dim groupName, strGroup
+	
+		'' find unique group name
+		i = 0
+		Do While True
+			groupName = strType & "_" & i
+			If Not Rhino.IsGroup(groupName) Then Exit Do
+			i = i + 1
+		Loop
+	
+		strGroup = Rhino.AddGroup(groupName)
+		strMesh = Rhino.AddMesh(ptArr, array(array(0, 1, 2, 2), array(0, 1, 3, 3), array(0, 2, 3, 3), array(1, 2, 3, 3)))
+		Call Rhino.UnifyMeshNormals(strMesh)
+		Call Rhino.ObjectColor(strMesh, tileColor)	
+	
+		strPt = Rhino.AddPoint(ptArr(0))
+		Call Rhino.ObjectColor(strPt, tileColor)
+	
+		Call Rhino.AddObjectsToGroup(array(strMesh, strPt), strGroup)
+	
+	Else
+		Print("DanzerTile() : input error")
+	End If
+	
+	DanzerTile = bool
+	
+End Function
+
+''a
+
+Function DanzerPtsA(mirror)
+	Dim ptArr(3)
+	ptArr(0) = array(0.0000, 0.0000, 0.0000)
+	ptArr(1) = array(1.0000, 0.0000, 0.0000)
+	ptArr(2) = array(0.7236, 1.4472, 0.0000)
+	ptArr(3) = array(0.5528, 0.7236, 0.5257)
+	
+	If mirror Then ptArr(3)(2) = -ptArr(3)(2)
+	DanzerPtsA = ptArr
+End Function
+
+Function DanzerSubDivPtsA(mirror)
+	Dim ptArr(10)
+	ptArr(0) = array(0.0000, 0.0000, 0.0000)
+	ptArr(1) = array(1.0000, 0.0000, 0.0000)
+	ptArr(2) = array(0.7236, 1.4472, 0.0000)
+	ptArr(3) = array(0.5528, 0.7236, 0.5257)
+	
+	ptArr(4) = array(0.8946, 0.5528, 0.0000)
+	ptArr(5) = array(0.4471, 0.8943, 0.0000)
+	ptArr(6) = array(0.7237, 0.4472, 0.0000)
+	ptArr(7) = array(0.5530, 0.3416, 0.0000)
+	
+	ptArr(8) = array(0.4473, 0.5855, 0.4253)
+	ptArr(9) = array(0.7236, 0.4473, 0.3250)
+	ptArr(10) = array(0.3416, 0.4473, 0.3250)							
+	
+	If mirror Then 
+		ptArr(3)(2) = -ptArr(3)(2)
+		ptArr(8)(2) = -ptArr(8)(2)
+		ptArr(9)(2) = -ptArr(9)(2)
+		ptArr(10)(2) = -ptArr(10)(2)
+	End If
+	
+	DanzerSubDivPtsA = ptArr
+	''Dim i
+	''For i = 0 To UBound(ptArr)
+	''	Call Rhino.AddTextDot(i&"", ptArr(i))
+	''Next
+	
+End Function
+
+Function DanzerSubDivTilesA(mirror)
+	''Print("subdiv A, mirror: "&mirror)
+	Dim arrDivPts : arrDivPts = DanzerSubDivPtsA(mirror)
+	Dim arrUnitPts(10)
+	Dim arrUnitTypes(10)
+	
+	arrUnitPts(0) = array(arrDivPts(9), arrDivPts(1), arrDivPts(0), arrDivPts(7)): arrUnitTypes(0) = mirrorType("B", mirror)
+	arrUnitPts(1) = array(arrDivPts(9), arrDivPts(5), arrDivPts(0), arrDivPts(10)): arrUnitTypes(1) = mirrorType("B", mirror)
+	arrUnitPts(2) = array(arrDivPts(9), arrDivPts(3), arrDivPts(2), arrDivPts(5)): arrUnitTypes(2) = mirrorType("C", mirror)
+	arrUnitPts(3) = array(arrDivPts(9), arrDivPts(1), arrDivPts(7), arrDivPts(6)): arrUnitTypes(3) = mirrorType("K", mirror)
+	arrUnitPts(4) = array(arrDivPts(9), arrDivPts(5), arrDivPts(10), arrDivPts(8)): arrUnitTypes(4) = mirrorType("K", mirror)
+	arrUnitPts(5) = array(arrDivPts(9), arrDivPts(5), arrDivPts(4), arrDivPts(6)): arrUnitTypes(5) = mirrorType("K", mirror)
+	arrUnitPts(6) = array(arrDivPts(9), arrDivPts(5), arrDivPts(0), arrDivPts(7)): arrUnitTypes(6) = mirrorType("b", mirror)
+	arrUnitPts(7) = array(arrDivPts(9), arrDivPts(4), arrDivPts(2), arrDivPts(5)): arrUnitTypes(7) = mirrorType("c", mirror)
+	arrUnitPts(8) = array(arrDivPts(9), arrDivPts(5), arrDivPts(3), arrDivPts(8)): arrUnitTypes(8) = mirrorType("k", mirror)
+	arrUnitPts(9) = array(arrDivPts(9), arrDivPts(5), arrDivPts(7), arrDivPts(6)): arrUnitTypes(9) = mirrorType("k", mirror)
+	arrUnitPts(10) = array(arrDivPts(9), arrDivPts(1), arrDivPts(4), arrDivPts(6)): arrUnitTypes(10) = mirrorType("k", mirror)
+	
+	DanzerSubDivTilesA = array(arrUnitTypes, arrUnitPts)
+	
+End Function
+
+
+''b
+
+Function DanzerPtsB(mirror)
+	Dim ptArr(3)
+	ptArr(0) = array(0.0000, 0.0000, 0.0000)
+	ptArr(1) = array(1.0000, 0.0000, 0.0000)
+	ptArr(2) = array(0.2764, 1.4472, 0.0000)
+	ptArr(3) = array(0.2764, 0.4472, 0.3249)
+	
+	If mirror Then ptArr(3)(2) = -ptArr(3)(2)
+	DanzerPtsB = ptArr
+End Function
+
+Function DanzerSubDivPtsB(mirror)
+	Dim ptArr(7)
+	ptArr(0) = array(0.0000, 0.0000, 0.0000)
+	ptArr(1) = array(1.0000, 0.0000, 0.0000)
+	ptArr(2) = array(0.2764, 1.4472, 0.0000)
+	ptArr(3) = array(0.2764, 0.4472, 0.3249)
+	
+	ptArr(4) = array(0.4472, 0.3416, 0.0000)
+	ptArr(5) = array(0.5528, 0.8944, 0.0000)
+	ptArr(6) = array(0.1056, 0.5528, 0.0000)
+	ptArr(7) = array(0.2764, 0.4472, 0.0000)
+	
+	
+	If mirror Then 
+		ptArr(3)(2) = -ptArr(3)(2)
+	End If
+	
+	DanzerSubDivPtsB = ptArr
+	
+End Function
+
+Function DanzerSubDivTilesB(mirror)
+	''Print("subdiv B, mirror: "&mirror)
+	Dim arrDivPts : arrDivPts = DanzerSubDivPtsB(mirror)
+	Dim arrUnitPts(6)
+	Dim arrUnitTypes(6)
+	
+	arrUnitPts(0) = array(arrDivPts(3), arrDivPts(5), arrDivPts(1), arrDivPts(4)): arrUnitTypes(0) = mirrorType("B", mirror)
+	arrUnitPts(1) = array(arrDivPts(3), arrDivPts(6), arrDivPts(2), arrDivPts(5)): arrUnitTypes(1) = mirrorType("C", mirror)
+	arrUnitPts(2) = array(arrDivPts(3), arrDivPts(0), arrDivPts(6), arrDivPts(7)): arrUnitTypes(2) = mirrorType("K", mirror)
+	arrUnitPts(3) = array(arrDivPts(3), arrDivPts(5), arrDivPts(4), arrDivPts(7)): arrUnitTypes(3) = mirrorType("K", mirror)
+	arrUnitPts(4) = array(arrDivPts(3), arrDivPts(0), arrDivPts(1), arrDivPts(4)): arrUnitTypes(4) = mirrorType("b", mirror)
+	arrUnitPts(5) = array(arrDivPts(3), arrDivPts(0), arrDivPts(4), arrDivPts(7)): arrUnitTypes(5) = mirrorType("k", mirror)
+	arrUnitPts(6) = array(arrDivPts(3), arrDivPts(5), arrDivPts(6), arrDivPts(7)): arrUnitTypes(6) = mirrorType("k", mirror)
+
+	DanzerSubDivTilesB = array(arrUnitTypes, arrUnitPts)
+	
+End Function
+
+''c
+
+Function DanzerPtsC(mirror)
+	Dim ptArr(3)
+	ptArr(0) = array(0.0000, 0.0000, 0.0000)
+	ptArr(1) = array(0.6180, 0.0000, 0.0000)
+	ptArr(2) = array(0.8944, 1.4472, 0.0000)
+	ptArr(3) = array(0.4472, 0.7236, 0.5257)
+	
+	If mirror Then ptArr(3)(2) = -ptArr(3)(2)
+	DanzerPtsC = ptArr
+End Function
+
+Function DanzerSubDivPtsC(mirror)
+	Dim ptArr(7)
+	ptArr(0) = array(0.0000, 0.0000, 0.0000)
+	ptArr(1) = array(0.6180, 0.0000, 0.0000)
+	ptArr(2) = array(0.8944, 1.4472, 0.0000)
+	ptArr(3) = array(0.4472, 0.7236, 0.5257)
+	
+	ptArr(4) = array(0.7888, 0.8943, 0.0000)
+	ptArr(5) = array(0.6180, 1.0000, 0.0000)
+	ptArr(6) = array(0.3417, 0.5527, 0.0000)
+	ptArr(7) = array(0.6180, 1.0000, 0.3249)
+	
+	
+	If mirror Then 
+		ptArr(3)(2) = -ptArr(3)(2)
+		ptArr(7)(2) = -ptArr(7)(2)
+	End If
+	
+	DanzerSubDivPtsC = ptArr
+	
+End Function
+
+Function DanzerSubDivTilesC(mirror)
+	''Print("subdiv C, mirror: "&mirror)
+	Dim arrDivPts : arrDivPts = DanzerSubDivPtsC(mirror)
+	Dim arrUnitPts(4)
+	Dim arrUnitTypes(4)
+	
+	arrUnitPts(0) = array(arrDivPts(7), arrDivPts(4), arrDivPts(1), arrDivPts(6)): arrUnitTypes(0) = mirrorType("C", mirror)
+	arrUnitPts(1) = array(arrDivPts(7), arrDivPts(2), arrDivPts(4), arrDivPts(5)): arrUnitTypes(1) = mirrorType("K", mirror)
+	arrUnitPts(2) = array(arrDivPts(0), arrDivPts(1), arrDivPts(3), arrDivPts(6)): arrUnitTypes(2) = mirrorType("a", mirror)
+	arrUnitPts(3) = array(arrDivPts(7), arrDivPts(3), arrDivPts(1), arrDivPts(6)): arrUnitTypes(3) = mirrorType("c", mirror)
+	arrUnitPts(4) = array(arrDivPts(7), arrDivPts(6), arrDivPts(4), arrDivPts(5)): arrUnitTypes(4) = mirrorType("k", mirror)
+
+	DanzerSubDivTilesC = array(arrUnitTypes, arrUnitPts)
+	
+End Function
+
+''k
+
+Function DanzerPtsK(mirror)
+	Dim ptArr(3)
+	ptArr(0) = array(0.0000, 0.0000, 0.0000)
+	ptArr(1) = array(1.0000, 0.0000, 0.0000)
+	ptArr(2) = array(0.2764, 0.5528, 0.0000)
+	ptArr(3) = array(0.2764, 0.3618, 0.2629)
+	
+	If mirror Then ptArr(3)(2) = -ptArr(3)(2)
+	DanzerPtsK = ptArr
+End Function
+
+Function DanzerSubDivPtsK(mirror)
+	Dim ptArr(7)
+	ptArr(0) = array(0.0000, 0.0000, 0.0000)
+	ptArr(1) = array(1.0000, 0.0000, 0.0000)
+	ptArr(2) = array(0.2764, 0.5528, 0.0000)
+	ptArr(3) = array(0.2764, 0.3618, 0.2629)
+	
+	ptArr(4) = array(0.4472, 0.2764, 0.2008)
+	
+	
+	If mirror Then 
+		ptArr(3)(2) = -ptArr(3)(2)
+		ptArr(4)(2) = -ptArr(4)(2)
+	End If
+	
+	DanzerSubDivPtsK = ptArr
+	
+End Function
+
+Function DanzerSubDivTilesK(mirror)
+	''Print("subdiv C, mirror: "&mirror)
+	Dim arrDivPts : arrDivPts = DanzerSubDivPtsK(mirror)
+	Dim arrUnitPts(1)
+	Dim arrUnitTypes(1)
+	
+	arrUnitPts(0) = array(arrDivPts(2), arrDivPts(0), arrDivPts(1), arrDivPts(4)): arrUnitTypes(0) = mirrorType("B", mirror)
+	arrUnitPts(1) = array(arrDivPts(2), arrDivPts(0), arrDivPts(4), arrDivPts(3)): arrUnitTypes(1) = mirrorType("K", mirror)
+
+	DanzerSubDivTilesK = array(arrUnitTypes, arrUnitPts)
+	
+End Function
+
+
+Function mirrorType(str, doMirror)
+	If doMirror Then
+		Select Case str
+			Case "A"
+				mirrorType = "a"
+			Case "a"
+				mirrorType = "A"
+			Case "B"
+				mirrorType = "b"
+			Case "b"
+				mirrorType = "B"
+			Case "C"
+				mirrorType = "c"
+			Case "c"
+				mirrorType = "C"
+			Case "K"
+				mirrorType = "k"
+			Case "k"
+				mirrorType = "K"				
+			Case Else
+				Print("mirror():found unknown tile type")
+				mirrorType = False
+		End Select
+	Else
+		mirrorType = str
+	End If
+
+End Function
